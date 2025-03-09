@@ -4,6 +4,7 @@ import android.os.Binder
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.github.kyuubiran.ezxhelper.utils.findMethod
+import com.github.kyuubiran.ezxhelper.utils.findMethodOrNull
 import com.github.kyuubiran.ezxhelper.utils.hookBefore
 import de.robv.android.xposed.XC_MethodHook
 import icu.nullptr.hidemyapplist.common.Constants
@@ -24,6 +25,7 @@ class PmsHookTarget34(private val service: HMAService) : IFrameworkHook {
     }
 
     private var hook: XC_MethodHook.Unhook? = null
+    private var exphook: XC_MethodHook.Unhook? = null
     private var lastFilteredApp: AtomicReference<String?> = AtomicReference(null)
 
     @Suppress("UNCHECKED_CAST")
@@ -56,9 +58,10 @@ class PmsHookTarget34(private val service: HMAService) : IFrameworkHook {
             }
         }
         // AOSP exploit - https://github.com/aosp-mirror/platform_frameworks_base/commit/5bc482bd99ea18fe0b4064d486b29d5ae2d65139
-        hook = findMethod("com.android.server.pm.PackageManagerService", findSuper = true) {
+        // Only 14 QPR2+ has this method
+        exphook = findMethodOrNull("com.android.server.pm.PackageManagerService", findSuper = true) {
             name == "getArchivedPackageInternal"
-        }.hookBefore { param ->
+        }?.hookBefore { param ->
             runCatching {
                 val callingUid = Binder.getCallingUid()
                 if (callingUid == Constants.UID_SYSTEM) return@hookBefore
@@ -76,15 +79,9 @@ class PmsHookTarget34(private val service: HMAService) : IFrameworkHook {
                         return@hookBefore
                     }
                 }
-            }.
-            onFailure {
-                if (it is NoSuchMethodException) {
-                    // This API only exists on 14 QPR2+
-                    logI(TAG, "getArchivedPackageInternal does not exist, ignore")
-                } else {
-                    logE(TAG, "Fatal error occurred, disable hooks", it)
-                    unload()
-                }
+            }.onFailure {
+                logE(TAG, "Fatal error occurred, disable hooks", it)
+                unload()
             }
         }
     }
